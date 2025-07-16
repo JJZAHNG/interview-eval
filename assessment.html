@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Cornard Interview Evaluation</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500&display=swap');
+
+        :root {
+            --primary: #00d9ff;
+            --secondary: #5b67f3;
+            --bg-start: #0d1b2a;
+            --bg-end: #00040f;
+            --card-bg: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            font-family: 'Rajdhani', sans-serif;
+            color: #e4e7eb;
+            background: radial-gradient(circle at 20% 20%, var(--bg-start), var(--bg-end));
+            overflow: hidden;
+        }
+
+        h1 {
+            margin: 0;
+            text-align: center;
+            font-size: 2.2rem;
+            color: var(--primary);
+            text-shadow: 0 0 6px var(--primary);
+        }
+
+        .wrapper {
+            display: flex;
+            height: calc(100% - 60px);
+            gap: 24px;
+            padding: 30px;
+        }
+
+        .panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            overflow: auto;
+            position: relative;
+        }
+
+        label {
+            font-size: 1rem;
+            margin-top: 16px;
+            color: #c3c7ce;
+            display: block;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            margin-top: 6px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            color: #e4e7eb;
+            font-size: 1rem;
+        }
+
+        textarea {
+            height: 70px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 24px;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 30px;
+            background: linear-gradient(135deg, var(--secondary), var(--primary));
+            color: #fff;
+            font-size: 1.1rem;
+            cursor: pointer;
+            box-shadow: 0 0 12px var(--primary);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        #chartContainer {
+            display: none;
+            height: 100%;
+        }
+
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        #chartTitle {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: var(--secondary);
+        }
+
+        #teamFitContainer {
+            display: none;
+            margin-top: 24px;
+            text-align: center;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        #teamFitContainer select {
+            margin-top: 12px;
+            padding: 12px 16px;
+            font-size: 1.1rem;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        #feedbackPanel {
+            display: none;
+            margin-top: 24px;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 8px;
+            color: #e4e7eb;
+            font-size: 0.95rem;
+            line-height: 1.6;
+        }
+
+        @media print {
+            button {
+                display: none;
+            }
+
+            html, body {
+                overflow: visible;
+            }
+        }
+    </style>
+</head>
+<body>
+<h1>STEMHUB INTERVIEW EVALUATION</h1>
+<div class="wrapper">
+    <div class="panel" id="formPanel" style="max-width:480px;">
+        <form id="evalForm">
+            <label for="name">Student Name</label>
+            <input id="name" required/>
+            <label for="track">Choose Track</label>
+            <select id="track" required>
+                <option value="engineering">Engineering</option>
+                <option value="business">Business</option>
+            </select>
+            <div id="questions"></div>
+            <button type="submit">Generate Radar Chart</button>
+        </form>
+        <div id="feedbackPanel"></div>
+        <div id="teamFitContainer">
+            <div>Select Your Team 选择团队</div>
+            <select id="teamFit">
+                <option value="MediGuard">MediGuard</option>
+                <option value="FlexSense">FlexSense</option>
+                <option value="StarLeap">StarLeap</option>
+                <option value="HexCore">HexCore</option>
+                <option value="NanoShield">NanoShield</option>
+            </select>
+        </div>
+    </div>
+    <div class="panel" id="chartPanel">
+        <div id="chartTitle"></div>
+        <div id="chartContainer">
+            <canvas id="radarChart"></canvas>
+        </div>
+    </div>
+</div>
+<script>
+    const API_KEY = "sk-a99ede93ae2948928ea5b10133538a9b";
+    const URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions";
+    const ENGINEERING_DIMENSIONS = ["Technical Depth", "Problem‑Solving", "Innovation", "Systems Thinking", "Collaboration"];
+    const BUSINESS_DIMENSIONS = ["Market Insight", "Strategic Vision", "Financial Acumen", "Communication", "Leadership"];
+    const QUESTIONS = {
+        engineering: ["Describe a project...", "How did you optimize...", "Give an example...", "Explain your approach...", "Which emerging technology..."],
+        business: ["Share an instance...", "Walk us through...", "Give an example...", "How do you balance...", "Which disruptive trend..."]
+    };
+    let radarChart = null;
+
+    function renderQuestions(track) {
+        const wrap = document.getElementById('questions');
+        wrap.innerHTML = '';
+        QUESTIONS[track].forEach((q, i) => {
+            wrap.innerHTML += `<label for="q${i + 1}">${q}</label><textarea id="q${i + 1}" required></textarea>`;
+        });
+    }
+
+    function buildPrompt(dims, text) {
+        const list = dims.map(d => `- ${d} (0-5)`).join("\n");
+        return `Rate each of the following on 1-5 (min 1, max 5, integer only). Output JSON ONLY:\n${list}\nResponses:\n${text}`;
+    }
+
+    async function callLLMEvaluate(track, answers) {
+        const dims = track === 'engineering' ? ENGINEERING_DIMENSIONS : BUSINESS_DIMENSIONS;
+        const prompt = buildPrompt(dims, answers.join("\n\n"));
+        console.log('Prompt:', prompt);
+        const res = await fetch(URL, {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}`},
+            body: JSON.stringify({model: 'qwen-plus', messages: [{role: 'user', content: prompt}]})
+        });
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('Error response:', errorText);
+            throw new Error('Failed to fetch scores');
+        }
+        const data = await res.json();
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) throw new Error('Invalid response format');
+        let txt = data.choices[0].message.content.trim().replace(/^```.*\n?|```$/g, '');
+        const parsed = JSON.parse(txt);
+        Object.keys(parsed).forEach(k => parsed[k] = Math.max(1, parseInt(parsed[k])));
+        console.log('Parsed Scores:', parsed);
+        return dims.map(d => parsed[d] || 1);
+    }
+
+    async function callLLMSummary(name, track, scores) {
+        const dims = track === 'engineering' ? ENGINEERING_DIMENSIONS : BUSINESS_DIMENSIONS;
+        const prompt = `You are an expert evaluator. Based on the following scores, write a detailed, professional evaluation for ${name} (min 3 sentences). Mention strengths and one improvement. Then translate it to Chinese. Do not mention scores.\n${dims.map((d, i) => `${d}: ${scores[i]}`).join(', ')}`;
+        console.log('Summary Prompt:', prompt);
+        const res = await fetch(URL, {
+            method: 'POST', headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${API_KEY}`},
+            body: JSON.stringify({model: 'qwen-plus', messages: [{role: 'user', content: prompt}]})
+        });
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('Error response:', errorText);
+            throw new Error('Failed to fetch summary');
+        }
+        const data = await res.json();
+        if (!data.choices || !data.choices[0] || !data.choices[0].message) throw new Error('Invalid response format');
+        return data.choices[0].message.content.trim();
+    }
+
+    async function renderChart(name, track, labels, scores) {
+        document.getElementById('questions').style.display = 'none';
+        document.querySelector('#formPanel button').style.display = 'none';
+        document.getElementById('feedbackPanel').style.display = 'block';
+        document.getElementById('chartTitle').innerText = `${name} – ${track}`;
+        document.getElementById('chartContainer').style.display = 'block';
+        document.getElementById('teamFitContainer').style.display = 'block';
+
+        if (radarChart) radarChart.destroy();
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels, datasets: [{
+                    label: name, data: scores,
+                    backgroundColor: 'rgba(0,217,255,0.3)',
+                    borderColor: '#00d9ff',
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#00d9ff'
+                }]
+            },
+            options: {
+                scales: {
+                    r: {
+                        min: 0, max: 5, ticks: {stepSize: 1, color: '#fff'},
+                        grid: {color: '#fff'}, angleLines: {color: '#fff'},
+                        pointLabels: {color: '#fff', font: {size: 14}}
+                    }
+                },
+                plugins: {legend: {labels: {color: '#fff'}}}
+            }
+        });
+
+        const summary = await callLLMSummary(name, track, scores);
+        document.getElementById('feedbackPanel').innerText = summary;
+    }
+
+    document.getElementById('track').addEventListener('change', e => renderQuestions(e.target.value));
+    document.getElementById('evalForm').addEventListener('submit', async e => {
+        e.preventDefault();
+        const name = document.getElementById('name').value.trim();
+        const track = document.getElementById('track').value;
+        const answers = Array.from(document.querySelectorAll('#questions textarea')).map(t => t.value.trim());
+        const labels = track === 'engineering' ? ENGINEERING_DIMENSIONS : BUSINESS_DIMENSIONS;
+        try {
+            const scores = await callLLMEvaluate(track, answers);
+            await renderChart(name, track, labels, scores);
+        } catch (err) {
+            console.error(err);
+            alert('Error during evaluation: ' + err.message);
+        }
+    });
+    renderQuestions(document.getElementById('track').value);
+</script>
+</body>
+</html>
